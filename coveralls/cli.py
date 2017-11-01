@@ -19,6 +19,7 @@ Global options:
     --service=<name>  Provide an alternative service name to submit.
     --rcfile=<file>   Specify configuration file. [default: .coveragerc]
     --output=<file>   Write report to file. Doesn't send anything.
+    --upload=<file>   Upload a previously generated file.
     --merge=<file>    Merge report from file when submitting.
     -h --help         Display this help.
     -v --verbose      Print extra info, always enabled when debugging.
@@ -67,6 +68,9 @@ def main(argv=None):
         elif options['--output']:
             log.info('Write coverage report to file...')
             coverallz.save_report(options['--output'])
+        elif options['--upload']:
+            with open(options['--upload'], 'r') as report_file:
+                coverallz.upload_report(report_file.read())
         else:
             log.info('Submitting coverage to coveralls.io...')
             result = coverallz.wear()
