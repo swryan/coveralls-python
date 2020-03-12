@@ -1,7 +1,9 @@
+.. _configuration:
+
 Configuration
 =============
 
-coveralls-python often works without any outside configuration by examining the environment it is being run in. Special handling has been added for AppVeyor, BuildKite, CircleCI, Jenkins, and TravisCI to make coveralls-python as close to "plug and play" as possible.
+coveralls-python often works without any outside configuration by examining the environment it is being run in. Special handling has been added for AppVeyor, BuildKite, CircleCI, Github Actions, Jenkins, and TravisCI to make coveralls-python as close to "plug and play" as possible.
 
 Most often, you will simply need to run coveralls-python with no additional options after you have run your coverage suite::
 
@@ -17,9 +19,9 @@ If you would like to override the service name (auto-discovered on most CI syste
     # or, via env var:
     COVERALLS_SERVICE_NAME=travis-pro coveralls
 
-If you are interested in merging the coverage results between multiple languages/projects, see our `multi-language <multilang.rst>`_ documentation.
+If you are interested in merging the coverage results between multiple languages/projects, see our :ref:`multi-language <multilang>` documentation.
 
-If coveralls-python is being run on CircleCI or TravisCI, it will automatically set the token for communication with coveralls.io. Otherwise, you should set the environment variable ``COVERALLS_REPO_TOKEN``, which can be found on the dashboard for your project in coveralls.io::
+If coveralls-python is being run on TravisCI, it will automatically set the token for communication with coveralls.io. Otherwise, you should set the environment variable ``COVERALLS_REPO_TOKEN``, which can be found on the dashboard for your project in coveralls.io::
 
     COVERALLS_REPO_TOKEN=mV2Jajb8y3c6AFlcVNagHO20fiZNkXPVy coveralls
 
@@ -30,6 +32,14 @@ If you are running multiple jobs in parallel and want coveralls.io to merge thos
 If you are using a non-public coveralls.io instance (for example: self-hosted Coveralls Enterprise), you can set ``COVERALLS_HOST`` to the base URL of that insance::
 
     COVERALLS_HOST="https://coveralls.aperture.com" coveralls
+
+In that case, you may also be interested in disabling SSL verification::
+
+    COVERALLS_SKIP_SSL_VERIFY='1' coveralls
+
+If you are using named jobs, you can set::
+
+    COVERALLS_FLAG_NAME="insert-name-here"
 
 You can also set any of these values in a ``.coveralls.yml`` file in the root of your project repository. If you are planning to use this method, please ensure you install ``coveralls[yaml]`` instead of just the base ``coveralls`` package.
 

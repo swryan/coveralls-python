@@ -6,7 +6,7 @@ Running coveralls-python from within a `tox`_ environment (v2.0 and above) requi
 For example, on TravisCI::
 
     [tox]
-    envlist = py27,py33,py34
+    envlist = py27,py34,py35,py36
 
     [testenv]
     passenv = TRAVIS TRAVIS_*
@@ -16,7 +16,7 @@ For example, on TravisCI::
         coverage run --source=yourpackagename setup.py test
         coveralls
 
-If you are configuring coveralls-python with environment variables, you should also pass those. See `configuration <configuration.rst>`_ for more details.
+If you are configuring coveralls-python with environment variables, you should also pass those. See :ref:`configuration` for more details.
 
 AppVeyor
 --------
@@ -56,6 +56,19 @@ All variables:
 - ``CIRCLE_BRANCH``
 - ``CI_PULL_REQUEST``
 
+Github Actions
+--------------
+::
+
+    passenv = GITHUB_*
+
+All variables:
+
+- ``GITHUB_ACTIONS``
+- ``GITHUB_REF``
+- ``GITHUB_SHA``
+- ``GITHUB_HEAD_REF``
+
 Jenkins
 -------
 ::
@@ -83,4 +96,17 @@ All variables:
 - ``TRAVIS_BRANCH``
 - ``TRAVIS_PULL_REQUEST``
 
+
+SemaphoreCI
+-------
+::
+
+    passenv = SEMAPHORE SEMAPHORE_BUILD_NUMBER BRANCH_NAME PULL_REQUEST_NUMBER
+
+All variables:
+
+- ``SEMAPHORE``
+- ``SEMAPHORE_BUILD_NUMBER``
+- ``BRANCH_NAME``
+- ``PULL_REQUEST_NUMBER``
 .. _tox: https://tox.readthedocs.io/en/latest/

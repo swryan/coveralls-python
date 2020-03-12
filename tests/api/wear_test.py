@@ -7,9 +7,9 @@ import unittest
 
 import coverage
 import mock
-import sh
+import pytest
 
-from coveralls import Coveralls
+import coveralls
 from coveralls.api import log
 
 
@@ -22,12 +22,15 @@ EXPECTED = {
 @mock.patch('coveralls.api.requests')
 class WearTest(unittest.TestCase):
     def setUp(self):
-        sh.rm('-f', '.coverage')
+        try:
+            os.remove('.coverage')
+        except Exception:
+            pass
 
     def test_wet_run(self, mock_requests):
         mock_requests.post.return_value.json.return_value = EXPECTED
 
-        result = Coveralls(repo_token='xxx').wear(dry_run=False)
+        result = coveralls.Coveralls(repo_token='xxx').wear(dry_run=False)
         assert result == EXPECTED
 
     def test_merge(self, _mock_requests):
@@ -36,7 +39,7 @@ class WearTest(unittest.TestCase):
             b'{"source_files": [{"name": "foobar", "coverage": []}]}')
         coverage_file.seek(0)
 
-        api = Coveralls(repo_token='xxx')
+        api = coveralls.Coveralls(repo_token='xxx')
         api.merge(coverage_file.name)
         result = api.create_report()
 
@@ -48,7 +51,7 @@ class WearTest(unittest.TestCase):
         coverage_file.write(b'{}')
         coverage_file.seek(0)
 
-        api = Coveralls(repo_token='xxx')
+        api = coveralls.Coveralls(repo_token='xxx')
         api.merge(coverage_file.name)
         result = api.create_report()
 
@@ -61,7 +64,7 @@ class WearTest(unittest.TestCase):
         coverage_file.write(b'{"random": "stuff"}')
         coverage_file.seek(0)
 
-        api = Coveralls(repo_token='xxx')
+        api = coveralls.Coveralls(repo_token='xxx')
         api.merge(coverage_file.name)
         result = api.create_report()
 
@@ -75,7 +78,7 @@ class WearTest(unittest.TestCase):
     def test_dry_run(self, mock_requests):
         mock_requests.post.return_value.json.return_value = EXPECTED
 
-        result = Coveralls(repo_token='xxx').wear(dry_run=True)
+        result = coveralls.Coveralls(repo_token='xxx').wear(dry_run=True)
         assert result == {}
 
     @mock.patch.object(log, 'debug')
@@ -83,7 +86,7 @@ class WearTest(unittest.TestCase):
                                                    mock_requests):
         mock_requests.post.return_value.json.return_value = EXPECTED
 
-        Coveralls(repo_token='xxx').wear(dry_run=True)
+        coveralls.Coveralls(repo_token='xxx').wear(dry_run=True)
         assert 'xxx' not in mock_logger.call_args[0][0]
 
     def test_coveralls_unavailable(self, mock_requests):
@@ -91,9 +94,8 @@ class WearTest(unittest.TestCase):
         mock_requests.post.return_value.status_code = 500
         mock_requests.post.return_value.text = '<html>Http 1./1 500</html>'
 
-        result = Coveralls(repo_token='xxx').wear()
-        assert result == {'message': ('Failure to submit data. Response [500]:'
-                                      ' <html>Http 1./1 500</html>')}
+        with pytest.raises(coveralls.exception.CoverallsException):
+            coveralls.Coveralls(repo_token='xxx').wear()
 
     @mock.patch('coveralls.reporter.CoverallReporter.report')
     def test_no_coverage(self, report_files, mock_requests):
@@ -101,20 +103,21 @@ class WearTest(unittest.TestCase):
         report_files.side_effect = coverage.CoverageException(
             'No data to report')
 
-        result = Coveralls(repo_token='xxx').wear()
-        assert result == {
-            'message': 'Failure to gather coverage: No data to report'}
+        with pytest.raises(coverage.CoverageException):
+            coveralls.Coveralls(repo_token='xxx').wear()
 
     @mock.patch.dict(
         os.environ,
-        {'COVERALLS_HOST': 'https://coveralls.my-enterprise.info'}, clear=True)
+        {'COVERALLS_HOST': 'https://coveralls.my-enterprise.info',
+         'COVERALLS_SKIP_SSL_VERIFY': '1'}, clear=True)
     def test_coveralls_host_env_var_overrides_api_url(self, mock_requests):
-        Coveralls(repo_token='xxx').wear(dry_run=False)
+        coveralls.Coveralls(repo_token='xxx').wear(dry_run=False)
         mock_requests.post.assert_called_once_with(
-            'https://coveralls.my-enterprise.info/api/v1/jobs', files=mock.ANY)
+            'https://coveralls.my-enterprise.info/api/v1/jobs',
+            files=mock.ANY, verify=False)
 
     @mock.patch.dict(os.environ, {}, clear=True)
     def test_api_call_uses_default_host_if_no_env_var_set(self, mock_requests):
-        Coveralls(repo_token='xxx').wear(dry_run=False)
+        coveralls.Coveralls(repo_token='xxx').wear(dry_run=False)
         mock_requests.post.assert_called_once_with(
-            'https://coveralls.io/api/v1/jobs', files=mock.ANY)
+            'https://coveralls.io/api/v1/jobs', files=mock.ANY, verify=True)

@@ -1,31 +1,82 @@
--   repo: git://github.com/pre-commit/pre-commit-hooks
-    sha: v0.9.2
+repos:
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v2.1.0
     hooks:
+    -   id: check-ast
+    -   id: check-builtin-literals
     -   id: check-case-conflict
     -   id: check-executables-have-shebangs
     -   id: check-json
     -   id: check-merge-conflict
     -   id: check-symlinks
+    -   id: check-vcs-permalinks
     -   id: check-xml
     -   id: check-yaml
+        args: [--allow-multiple-documents]
+    -   id: debug-statements
     -   id: detect-private-key
     -   id: end-of-file-fixer
-        exclude: example/*
-    -   id: trailing-whitespace
-    -   id: check-ast
-    -   id: double-quote-string-fixer
-        exclude: nonunicode.py
-    -   id: debug-statements
+        exclude: example/.*
+    -   id: file-contents-sorter
+        files: .dockerignore .gitignore
+    -   id: mixed-line-ending
+        args: [--fix=lf]
     -   id: name-tests-test
     -   id: requirements-txt-fixer
--   repo: git://github.com/pre-commit/mirrors-pylint
-    sha: v1.7.2
+    -   id: trailing-whitespace
+-   repo: https://github.com/pre-commit/mirrors-pylint
+    rev: v2.3.1
     hooks:
     -   id: pylint
         args:
+        - --max-line-length=79
+        - --ignore-imports=yes
+        - -d broad-except
         - -d fixme
         - -d import-error
         - -d invalid-name
         - -d locally-disabled
         - -d missing-docstring
-        exclude: example/*
+        - -d too-few-public-methods
+        - -d useless-object-inheritance
+        exclude: example/.*
+-   repo: https://github.com/Lucas-C/pre-commit-hooks
+    rev: v1.1.6
+    hooks:
+    -   id: remove-tabs
+-   repo: https://github.com/asottile/reorder_python_imports
+    rev: v1.4.0
+    hooks:
+    -   id: reorder-python-imports
+        args: [--py26-plus]
+        files: coveralls/.*
+-   repo: https://github.com/asottile/yesqa
+    rev: v0.0.10
+    hooks:
+    -   id: yesqa
+        files: coveralls/.*
+-   repo: https://github.com/pre-commit/mirrors-autopep8
+    rev: v1.4.3
+    hooks:
+    -   id: autopep8
+        files: coveralls/.*
+-   repo: https://github.com/PyCQA/pydocstyle
+    rev: 792b8d92  # TODO: >3.0.0
+    hooks:
+    -   id: pydocstyle
+        args:
+        - --ignore=D1,D203,D205,D212,D400,D401,D404
+        files: coveralls/.*
+-   repo: https://gitlab.com/pycqa/flake8
+    rev: 3.7.7
+    hooks:
+    -   id: flake8
+        args:
+        - --ignore=E501,W503,F811,F821
+        files: coveralls/.*
+-   repo: https://github.com/pre-commit/pygrep-hooks
+    rev: v1.2.0
+    hooks:
+    -   id: python-no-log-warn
+    -   id: python-use-type-annotations
+    -   id: rst-backticks

@@ -1,4 +1,5 @@
-"""Publish coverage results online via coveralls.io
+"""
+Publish coverage results online via coveralls.io
 
 Puts your coverage results on coveralls.io for everyone to see.
 
@@ -53,8 +54,9 @@ def main(argv=None):
     log.addHandler(logging.StreamHandler())
     log.setLevel(level)
 
+    token_required = not options['debug'] and not options['--output']
+
     try:
-        token_required = not options['debug'] and not options['--output']
         coverallz = Coveralls(token_required,
                               config_file=options['--rcfile'],
                               service_name=options['--service'])
@@ -65,7 +67,9 @@ def main(argv=None):
         if options['debug']:
             log.info('Testing coveralls-python...')
             coverallz.wear(dry_run=True)
-        elif options['--output']:
+            return
+
+        if options['--output']:
             log.info('Write coverage report to file...')
             coverallz.save_report(options['--output'])
         elif options['--upload']:
@@ -78,11 +82,17 @@ def main(argv=None):
             log.info(result['message'])
             log.info(result['url'])
             log.debug(result)
+            return
+
+        log.info('Submitting coverage to coveralls.io...')
+        result = coverallz.wear()
+
+        log.info('Coverage submitted!')
+        log.debug(result)
+        log.info(result['message'])
+        log.info(result['url'])
     except KeyboardInterrupt:  # pragma: no cover
         log.info('Aborted')
     except CoverallsException as e:
         log.exception(e)
         sys.exit(1)
-    except KeyError as e:  # pragma: no cover
-        log.exception(e)
-        sys.exit(2)

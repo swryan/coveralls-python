@@ -4,24 +4,23 @@ import json
 import logging
 import os
 import re
-import subprocess
 
 import coverage
 import requests
 
 from .exception import CoverallsException
+from .git import git_info
 from .reporter import CoverallReporter
 
 
-log = logging.getLogger('coveralls')
+log = logging.getLogger('coveralls.api')
 
 
 class Coveralls(object):
     config_filename = '.coveralls.yml'
 
     def __init__(self, token_required=True, service_name=None, **kwargs):
-        """ Coveralls!
-
+        """
         * repo_token
           The secret token for your repository, found at the bottom of your
           repository's page on Coveralls.
@@ -52,7 +51,13 @@ class Coveralls(object):
         name, job, pr = self.load_config_from_ci_environment()
         self.config['service_name'] = self.config.get('service_name', name)
         if job:
-            self.config['service_job_id'] = job
+            # N.B. Github Actions uses a different chunk of the Coveralls
+            # config when running parallel builds, ie. `service_number` instead
+            # of `service_job_id`.
+            if name.startswith('github'):
+                self.config['service_number'] = job
+            else:
+                self.config['service_job_id'] = job
         if pr:
             self.config['service_pull_request'] = pr
 
@@ -63,8 +68,8 @@ class Coveralls(object):
             return
 
         raise CoverallsException(
-            'Not on Travis or CircleCI. You have to provide either repo_token '
-            'in {} or set the COVERALLS_REPO_TOKEN env var.'.format(
+            'Not on TravisCI. You have to provide either repo_token in {} or '
+            'set the COVERALLS_REPO_TOKEN env var.'.format(
                 self.config_filename))
 
     @staticmethod
@@ -74,12 +79,24 @@ class Coveralls(object):
 
     @staticmethod
     def load_config_from_buildkite():
-        return 'buildkite', os.environ.get('BUILDKITE_JOB_ID'), None
+        pr = os.environ.get('BUILDKITE_PULL_REQUEST')
+        if pr == 'false':
+            pr = None
+        return 'buildkite', os.environ.get('BUILDKITE_JOB_ID'), pr
 
     @staticmethod
     def load_config_from_circle():
         pr = os.environ.get('CI_PULL_REQUEST', '').split('/')[-1] or None
         return 'circle-ci', os.environ.get('CIRCLE_BUILD_NUM'), pr
+
+    @staticmethod
+    def load_config_from_github():
+        service_number = os.environ.get('GITHUB_SHA')
+        pr = None
+        if os.environ.get('GITHUB_REF', '').startswith('refs/pull/'):
+            pr = os.environ.get('GITHUB_REF', '//').split('/')[2]
+            service_number += '-PR-{0}'.format(pr)
+        return 'github-actions', service_number, pr
 
     @staticmethod
     def load_config_from_jenkins():
@@ -92,24 +109,33 @@ class Coveralls(object):
         return 'travis-ci', os.environ.get('TRAVIS_JOB_ID'), pr
 
     @staticmethod
+    def load_config_from_semaphore():
+        pr = os.environ.get('PULL_REQUEST_NUMBER')
+        return 'semaphore-ci', os.environ.get('SEMAPHORE_BUILD_NUMBER'), pr
+
+    @staticmethod
     def load_config_from_unknown():
         return 'coveralls-python', None, None
 
     def load_config_from_ci_environment(self):
         if os.environ.get('APPVEYOR'):
-            return self.load_config_from_appveyor()
-        if os.environ.get('BUILDKITE'):
-            return self.load_config_from_buildkite()
-        if os.environ.get('CIRCLECI'):
+            name, job, pr = self.load_config_from_appveyor()
+        elif os.environ.get('BUILDKITE'):
+            name, job, pr = self.load_config_from_buildkite()
+        elif os.environ.get('CIRCLECI'):
+            name, job, pr = self.load_config_from_circle()
+        elif os.environ.get('GITHUB_ACTIONS'):
+            name, job, pr = self.load_config_from_github()
+        elif os.environ.get('JENKINS_HOME'):
+            name, job, pr = self.load_config_from_jenkins()
+        elif os.environ.get('TRAVIS'):
             self._token_required = False
-            return self.load_config_from_circle()
-        if os.environ.get('JENKINS_HOME'):
-            return self.load_config_from_jenkins()
-        if os.environ.get('TRAVIS'):
-            self._token_required = False
-            return self.load_config_from_travis()
-
-        return self.load_config_from_unknown()
+            name, job, pr = self.load_config_from_travis()
+        elif os.environ.get('SEMAPHORE'):
+            name, job, pr = self.load_config_from_semaphore()
+        else:
+            name, job, pr = self.load_config_from_unknown()
+        return (name, job, pr)
 
     def load_config_from_environment(self):
         coveralls_host = os.environ.get('COVERALLS_HOST')
@@ -127,6 +153,10 @@ class Coveralls(object):
         service_name = os.environ.get('COVERALLS_SERVICE_NAME')
         if service_name:
             self.config['service_name'] = service_name
+
+        flag_name = os.environ.get('COVERALLS_FLAG_NAME')
+        if flag_name:
+            self.config['flag_name'] = flag_name
 
     def load_config_from_file(self):
         try:
@@ -151,12 +181,7 @@ class Coveralls(object):
             self.create_data(extra)
 
     def wear(self, dry_run=False):
-        """ run! """
-        try:
-            json_string = self.create_report()
-        except coverage.CoverageException as e:
-            return {'message': 'Failure to gather coverage: {}'.format(e)}
-
+        json_string = self.create_report()
         if dry_run:
             return {}
         else:
@@ -164,13 +189,14 @@ class Coveralls(object):
 
     def upload_report(self, json_string):
         endpoint = '{}/api/v1/jobs'.format(self._coveralls_host.rstrip('/'))
-        response = requests.post(endpoint, files={'json_file': json_string})
+        verify = not bool(os.environ.get('COVERALLS_SKIP_SSL_VERIFY'))
+        response = requests.post(endpoint, files={'json_file': json_string},
+                                 verify=verify)
         try:
+            response.raise_for_status()
             return response.json()
-        except ValueError:
-            return {
-                'message': 'Failure to submit data. Response [{}]: {}'.format(
-                    response.status_code, response.text)}
+        except Exception as e:
+            raise CoverallsException('Could not submit coverage: {}'.format(e))
 
     def create_report(self):
         """Generate json dumped report for coveralls api."""
@@ -178,8 +204,7 @@ class Coveralls(object):
         try:
             json_string = json.dumps(data)
         except UnicodeDecodeError as e:
-            log.error('ERROR: While preparing JSON:')
-            log.exception(e)
+            log.error('ERROR: While preparing JSON:', exc_info=e)
             self.debug_bad_encoding(data)
             raise
 
@@ -195,18 +220,19 @@ class Coveralls(object):
 
     def save_report(self, file_path):
         """Write coveralls report to file."""
-        with open(file_path, 'w') as report_file:
-            try:
-                report = self.create_report()
-            except coverage.CoverageException as e:
-                logging.error('Failure to gather coverage:')
-                logging.exception(e)
-            else:
+        try:
+            report = self.create_report()
+        except coverage.CoverageException as e:
+            log.error('Failure to gather coverage:', exc_info=e)
+        else:
+            with open(file_path, 'w') as report_file:
                 report_file.write(report)
 
     def create_data(self, extra=None):
-        """ Generate object for api.
-            Example json:
+        r"""
+        Generate object for api.
+
+        Example json:
             {
                 "service_job_id": "1234567890",
                 "service_name": "travis-ci",
@@ -229,15 +255,14 @@ class Coveralls(object):
             return self._data
 
         self._data = {'source_files': self.get_coverage()}
-        self._data.update(self.git_info())
+        self._data.update(git_info())
         self._data.update(self.config)
         if extra:
             if 'source_files' in extra:
                 self._data['source_files'].extend(extra['source_files'])
             else:
-                log.warning(
-                    'No data to be merged; does the json file contain '
-                    '"source_files" data?')
+                log.warning('No data to be merged; does the json file contain '
+                            '"source_files" data?')
 
         return self._data
 
@@ -251,57 +276,11 @@ class Coveralls(object):
         else:
             workman.get_data()
 
-        return CoverallReporter(workman, workman.config).report()
-
-    @staticmethod
-    def git_info():
-        """ A hash of Git data that can be used to display more information to
-            users.
-
-            Example:
-            "git": {
-                "head": {
-                    "id": "5e837ce92220be64821128a70f6093f836dd2c05",
-                    "author_name": "Wil Gieseler",
-                    "author_email": "wil@example.com",
-                    "committer_name": "Wil Gieseler",
-                    "committer_email": "wil@example.com",
-                    "message": "depend on simplecov >= 0.7"
-                },
-                "branch": "master",
-                "remotes": [{
-                    "name": "origin",
-                    "url": "https://github.com/lemurheavy/coveralls-ruby.git"
-                }]
-            }
-        """
-        rev = run_command('git', 'rev-parse', '--abbrev-ref', 'HEAD').strip()
-        remotes = run_command('git', 'remote', '-v').splitlines()
-
-        return {
-            'git': {
-                'head': {
-                    'id': gitlog('%H'),
-                    'author_name': gitlog('%aN'),
-                    'author_email': gitlog('%ae'),
-                    'committer_name': gitlog('%cN'),
-                    'committer_email': gitlog('%ce'),
-                    'message': gitlog('%s'),
-                },
-                'branch': (os.environ.get('APPVEYOR_REPO_BRANCH') or
-                           os.environ.get('BUILDKITE_BRANCH') or
-                           os.environ.get('CI_BRANCH') or
-                           os.environ.get('CIRCLE_BRANCH') or
-                           os.environ.get('GIT_BRANCH') or
-                           os.environ.get('TRAVIS_BRANCH', rev)),
-                'remotes': [{'name': line.split()[0], 'url': line.split()[1]}
-                            for line in remotes if '(fetch)' in line]
-            }
-        }
+        return CoverallReporter(workman, workman.config).coverage
 
     @staticmethod
     def debug_bad_encoding(data):
-        """ Let's try to help user figure out what is at fault """
+        """Let's try to help user figure out what is at fault."""
         at_fault_files = set()
         for source_file_data in data['source_files']:
             for value in source_file_data.values():
@@ -314,29 +293,3 @@ class Coveralls(object):
             log.error('HINT: Following files cannot be decoded properly into '
                       'unicode. Check their content: %s',
                       ', '.join(at_fault_files))
-
-
-def gitlog(fmt):
-    glog = run_command('git', '--no-pager', 'log', '-1',
-                       '--pretty=format:{}'.format(fmt))
-
-    try:
-        return str(glog)
-    except UnicodeEncodeError:
-        return unicode(glog)  # pylint: disable=undefined-variable
-
-
-def run_command(*args):
-    cmd = subprocess.Popen(list(args), stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE)
-    stdout, stderr = cmd.communicate()
-
-    if cmd.returncode != 0:
-        raise CoverallsException(
-            'command return code {}, STDOUT: "{}"\nSTDERR: "{}"'.format(
-                cmd.returncode, stdout, stderr))
-
-    try:
-        return stdout.decode()
-    except UnicodeDecodeError:
-        return stdout.decode('utf-8')

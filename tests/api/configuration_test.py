@@ -1,6 +1,8 @@
 # coding: utf-8
 # pylint: disable=no-self-use
 import os
+import shutil
+import tempfile
 import unittest
 
 import mock
@@ -17,12 +19,15 @@ from coveralls.api import log
 @mock.patch.object(Coveralls, 'config_filename', '.coveralls.mock')
 class Configuration(unittest.TestCase):
     def setUp(self):
+        self.dir = tempfile.mkdtemp()
+
+        os.chdir(self.dir)
         with open('.coveralls.mock', 'w+') as fp:
             fp.write('repo_token: xxx\n')
             fp.write('service_name: jenkins\n')
 
     def tearDown(self):
-        os.remove('.coveralls.mock')
+        shutil.rmtree(self.dir)
 
     @pytest.mark.skipif(yaml is None, reason='requires PyYAML')
     @mock.patch.dict(os.environ, {}, clear=True)
@@ -59,8 +64,8 @@ class NoConfiguration(unittest.TestCase):
             Coveralls()
 
         assert str(excinfo.value) == (
-            'Not on Travis or CircleCI. You have to provide either repo_token '
-            'in .coveralls.mock or set the COVERALLS_REPO_TOKEN env var.')
+            'Not on TravisCI. You have to provide either repo_token in '
+            '.coveralls.mock or set the COVERALLS_REPO_TOKEN env var.')
 
     @mock.patch.dict(os.environ, {'APPVEYOR': 'True',
                                   'APPVEYOR_BUILD_ID': '1234567',
@@ -73,11 +78,24 @@ class NoConfiguration(unittest.TestCase):
         assert cover.config['service_pull_request'] == '1234'
 
     @mock.patch.dict(os.environ, {'BUILDKITE': 'True',
-                                  'BUILDKITE_JOB_ID': '1234567'}, clear=True)
+                                  'BUILDKITE_JOB_ID': '1234567',
+                                  'BUILDKITE_PULL_REQUEST': '1234'},
+                     clear=True)
     def test_buildkite_no_config(self):
         cover = Coveralls(repo_token='xxx')
         assert cover.config['service_name'] == 'buildkite'
         assert cover.config['service_job_id'] == '1234567'
+        assert cover.config['service_pull_request'] == '1234'
+
+    @mock.patch.dict(os.environ, {'BUILDKITE': 'True',
+                                  'BUILDKITE_JOB_ID': '1234567',
+                                  'BUILDKITE_PULL_REQUEST': 'false'},
+                     clear=True)
+    def test_buildkite_no_config_no_pr(self):
+        cover = Coveralls(repo_token='xxx')
+        assert cover.config['service_name'] == 'buildkite'
+        assert cover.config['service_job_id'] == '1234567'
+        assert 'service_pull_request' not in cover.config
 
     @mock.patch.dict(
         os.environ,
@@ -86,16 +104,43 @@ class NoConfiguration(unittest.TestCase):
          'CI_PULL_REQUEST': 'https://github.com/org/repo/pull/9999'},
         clear=True)
     def test_circleci_no_config(self):
-        cover = Coveralls()
+        cover = Coveralls(repo_token='xxx')
         assert cover.config['service_name'] == 'circle-ci'
         assert cover.config['service_job_id'] == '888'
         assert cover.config['service_pull_request'] == '9999'
 
-    @mock.patch.dict(os.environ,
-                     {'JENKINS_HOME': '/var/lib/jenkins',
-                      'BUILD_NUMBER': '888',
-                      'CI_PULL_REQUEST': 'https://github.com/org/repo/pull/9999'},
-                     clear=True)
+    @mock.patch.dict(
+        os.environ,
+        {'GITHUB_ACTIONS': 'true',
+         'GITHUB_REF': 'refs/pull/1234/merge',
+         'GITHUB_SHA': 'bb0e00166b28f49db04d6a8b8cb4bddb5afa529f',
+         'GITHUB_HEAD_REF': 'fixup-branch'},
+        clear=True)
+    def test_github_no_config(self):
+        cover = Coveralls(repo_token='xxx')
+        assert cover.config['service_name'] == 'github-actions'
+        assert cover.config['service_pull_request'] == '1234'
+        assert 'service_job_id' not in cover.config
+
+    @mock.patch.dict(
+        os.environ,
+        {'GITHUB_ACTIONS': 'true',
+         'GITHUB_REF': 'refs/heads/master',
+         'GITHUB_SHA': 'bb0e00166b28f49db04d6a8b8cb4bddb5afa529f',
+         'GITHUB_HEAD_REF': ''},
+        clear=True)
+    def test_github_no_config_no_pr(self):
+        cover = Coveralls(repo_token='xxx')
+        assert cover.config['service_name'] == 'github-actions'
+        assert 'service_pull_request' not in cover.config
+        assert 'service_job_id' not in cover.config
+
+    @mock.patch.dict(
+        os.environ,
+        {'JENKINS_HOME': '/var/lib/jenkins',
+         'BUILD_NUMBER': '888',
+         'CI_PULL_REQUEST': 'https://github.com/org/repo/pull/9999'},
+        clear=True)
     def test_jenkins_no_config(self):
         cover = Coveralls(repo_token='xxx')
         assert cover.config['service_name'] == 'jenkins'
@@ -109,6 +154,17 @@ class NoConfiguration(unittest.TestCase):
         assert cover.config['service_name'] == 'travis-ci'
         assert cover.config['service_job_id'] == '777'
         assert 'repo_token' not in cover.config
+
+    @mock.patch.dict(os.environ,
+                     {'SEMAPHORE': 'True',
+                      'SEMAPHORE_BUILD_NUMBER': '888',
+                      'PULL_REQUEST_NUMBER': '9999'},
+                     clear=True)
+    def test_semaphore_no_config(self):
+        cover = Coveralls(repo_token='xxx')
+        assert cover.config['service_name'] == 'semaphore-ci'
+        assert cover.config['service_job_id'] == '888'
+        assert cover.config['service_pull_request'] == '9999'
 
     @mock.patch.dict(os.environ, {'COVERALLS_SERVICE_NAME': 'xxx'}, clear=True)
     def test_service_name_from_env(self):
