@@ -185,7 +185,7 @@ class Coveralls(object):
         if dry_run:
             return {}
         else:
-            self.upload_report(json_string)
+            return self.upload_report(json_string)
 
     def upload_report(self, json_string):
         endpoint = '{}/api/v1/jobs'.format(self._coveralls_host.rstrip('/'))

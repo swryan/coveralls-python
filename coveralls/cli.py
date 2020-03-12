@@ -73,16 +73,17 @@ def main(argv=None):
             log.info('Write coverage report to file...')
             coverallz.save_report(options['--output'])
         elif options['--upload']:
+            log.info('Submitting coverage file to coveralls.io...')
             with open(options['--upload'], 'r') as report_file:
-                coverallz.upload_report(report_file.read())
+                result = coverallz.upload_report(report_file.read())
         else:
             log.info('Submitting coverage to coveralls.io...')
             result = coverallz.wear()
 
-            log.info('Coverage submitted!')
-            log.debug(result)
-            log.info(result['message'])
-            log.info(result['url'])
+        log.info('Coverage submitted!')
+        log.debug(result)
+        log.info(result['message'])
+        log.info(result['url'])
     except KeyboardInterrupt:  # pragma: no cover
         log.info('Aborted')
     except CoverallsException as e:
