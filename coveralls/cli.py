@@ -78,19 +78,11 @@ def main(argv=None):
         else:
             log.info('Submitting coverage to coveralls.io...')
             result = coverallz.wear()
+
             log.info('Coverage submitted!')
+            log.debug(result)
             log.info(result['message'])
             log.info(result['url'])
-            log.debug(result)
-            return
-
-        log.info('Submitting coverage to coveralls.io...')
-        result = coverallz.wear()
-
-        log.info('Coverage submitted!')
-        log.debug(result)
-        log.info(result['message'])
-        log.info(result['url'])
     except KeyboardInterrupt:  # pragma: no cover
         log.info('Aborted')
     except CoverallsException as e:
